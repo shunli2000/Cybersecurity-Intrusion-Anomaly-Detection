@@ -4,3 +4,5 @@ stats/*
 results/*
 __pycache__/*
 
+venv/
+note.md
