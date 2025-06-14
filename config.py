@@ -76,9 +76,7 @@ def configure():
     parser.add_argument(
         "--latent-size", type=int, default=2, metavar="Z", help="Latent size"
     )
-    parser.add_argument(
-        "--hidden-size", type=int, default=64, metavar="H", help="Hidden size"
-    )
+
     parser.add_argument(
         "--learning-rate", type=float, default=0.001, metavar="L", help="Learning rate"
     )
@@ -89,6 +87,12 @@ def configure():
         "--input-dim", type=int, default=None, help="Input dimension (for GNN)"
     )
     # GNN
+    parser.add_argument(
+        "--set-size", type=int, default=1, help="Set size for GNN training"
+    )
+    parser.add_argument(
+        "--hidden-size", type=int, default=64, metavar="H", help="Hidden size"
+    )
     parser.add_argument(
         "--num-layers", type=int, default=3, help="Number of layers in GNN"
     )

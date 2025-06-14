@@ -184,9 +184,9 @@ def get_marginal_posterior(data_loader, model, device):
     return MixtureSameFamily(mix, comp)
 
 
-def train_gnn(epoch, dataset, model):
+def train_gnn(epoch, dataset, model, set_size=1000):
     """Train GNN model for one epoch."""
-    train_loss, model = model.fit(dataset.data)
+    train_loss, model = model.fit(dataset.data, set_size=set_size)
     return train_loss, model
 
 

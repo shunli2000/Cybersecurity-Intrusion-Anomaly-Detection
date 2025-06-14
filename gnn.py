@@ -77,29 +77,44 @@ class GAEBenchmark:
         # Create PyG Data object
         return Data(x=X, edge_index=edge_index)
 
-    def fit(self, X, epochs=100, lr=1e-3):
+    def fit(self, X, epochs=100, lr=1e-3, set_size=1000):
         """Train the GNN model.
         Args:
-            X: DataLoader containing the data
+            X: Input data tensor
             epochs: Number of epochs to train
             lr: Learning rate
+            set_size: Number of samples to use in each training iteration
         """
         self.model.train()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
+        # Convert to tensor if needed
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float)
+        X = X.to(self.device)
+
         # Calculate total number of iterations
-        total_iterations = epochs * len(X)
+        n_samples = len(X)
+        n_sets = (n_samples + set_size - 1) // set_size  # ceiling division
+        total_iterations = epochs * n_sets
 
         pbar = tqdm(range(total_iterations), desc="Training GNN", disable=not wandb.run)
         iteration = 0
 
         for epoch in range(epochs):
-            for batch_X in X:
-                # Create graph for this batch
-                data = self._create_graph(batch_X)
+            # Shuffle indices at the start of each epoch
+            indices = torch.randperm(n_samples)
+
+            for set_start in range(0, n_samples, set_size):
+                # Get a subset of data
+                set_indices = indices[set_start : set_start + set_size]
+                set_X = X[set_indices]
+
+                # Create graph for this set
+                data = self._create_graph(set_X)
 
                 optimizer.zero_grad()
-                # encode → z: [batch_size, hidden_dim]
+                # encode → z: [set_size, hidden_dim]
                 z = self.model.encode(data.x, data.edge_index)
                 # loss = edge-reconstruction loss
                 loss = self.model.recon_loss(z, data.edge_index)
@@ -109,7 +124,7 @@ class GAEBenchmark:
                 # Update progress bar
                 iteration += 1
                 pbar.set_description(
-                    f"Epoch {epoch+1}/{epochs} Batch {iteration % len(X) + 1}/{len(X)}"
+                    f"Epoch {epoch+1}/{epochs} Set {set_start//set_size + 1}/{n_sets}"
                 )
                 pbar.set_postfix({"recon_loss": f"{loss.item():.4f}"})
 
@@ -118,7 +133,7 @@ class GAEBenchmark:
                     wandb.log(
                         {
                             "gnn/epoch": epoch + 1,
-                            "gnn/batch": iteration % len(X) + 1,
+                            "gnn/set": set_start // set_size + 1,
                             "gnn/iteration": iteration,
                             "gnn/recon_loss": loss.item(),
                         }

@@ -166,7 +166,7 @@ def train(args):
                 epoch, train_loader, model, prior, optimiser, args.device
             )
         elif model_name == "gnn":
-            train_loss, model = train_gnn(epoch, train_dataset, model)
+            train_loss, model = train_gnn(epoch, train_dataset, model, set_size=1000)
         else:
             train_loss, model = train_sklearn(epoch, train_dataset, model)
 
