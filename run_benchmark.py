@@ -3,6 +3,7 @@ import pickle
 import json
 import time
 import argparse
+import wandb
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -21,7 +22,7 @@ import torch
 from torch import optim
 from torch.distributions import MultivariateNormal
 from torch.utils.data import DataLoader
-import tqdm
+from tqdm.auto import tqdm
 
 from benchmarks import WhitenedBenchmark, get_benchmark
 from config import configure, BENCHMARK_LIST
@@ -37,6 +38,9 @@ from training import (
     train_vae,
     validate_sklearn,
     validate_vae,
+    train_gnn,
+    validate_gnn,
+    test_gnn,
 )
 
 # DEBUG timestamps
@@ -56,7 +60,9 @@ def train(args):
         for split in ["train", "val", "test"]
     ]
     print(
-        f"Data loaded. Train dataset shape: {train_dataset.data.shape}"
+        f"Data loaded. Train shape: {train_dataset.data.shape}, "
+        f"Val shape: {val_dataset.data.shape}, "
+        f"Test shape: {test_dataset.data.shape}"
     )  # Debug print
 
     train_loader = DataLoader(
@@ -106,13 +112,10 @@ def train(args):
             torch.eye(args.latent_size, device=args.device),
         )
     elif model_name == "gnn":
-        print("Initializing GNN model...")  # Debug print
         use_vae = False
         if args.input_dim is None:
             args.input_dim = train_dataset.data.shape[1]
-        print(f"Input dimension: {args.input_dim}")  # Debug print
         model = get_benchmark(model_name, args)
-        print("GNN model initialized")  # Debug print
     else:
         use_vae = False
         if model_name == "rcov":
@@ -130,36 +133,68 @@ def train(args):
     ##########################
     # Train & Validate
     ##########################
-    train_loss_log, val_loss_log = [], []
-    pbar = tqdm.trange(1, args.epochs + 1)
-    for epoch in pbar:
-        print(f"Starting epoch {epoch}")  # Debug print
+    train_loss_log, val_loss_log, val_auroc_log = [], [], []
+
+    # Initialize wandb if enabled
+    if args.use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            config={
+                "dataset": args.dataset,
+                "benchmark": args.benchmark,
+                "seed": args.seed,
+                "batch_size": args.batch_size,
+                "learning_rate": args.learning_rate,
+                "hidden_size": args.hidden_size,
+                "num_layers": args.num_layers,
+            },
+            name=f"{args.benchmark}_{args.dataset}_{args.seed}",
+        )
+
+    # Training loop
+    for epoch in range(1, args.epochs + 1):
         # Train model
         if use_vae:
             train_loss, zs = train_vae(
                 epoch, train_loader, model, prior, optimiser, args.device
             )
         elif model_name == "gnn":
-            print("Training GNN model...")  # Debug print
-            train_loss, model = model.fit(train_dataset.data)
-            print(f"GNN training completed. Loss: {train_loss}")  # Debug print
+            train_loss, model = train_gnn(epoch, train_dataset, model)
         else:
             train_loss, model = train_sklearn(epoch, train_dataset, model)
-        pbar.set_description(f"Epoch: {epoch} | Train Loss: {train_loss}")
+
+        # Print training loss
+        print(f"Epoch: {epoch} | Train Loss: {train_loss:.4f}")
         train_loss_log.append(train_loss)
 
         # Validate model
         if use_vae:
-            val_loss = validate_vae(epoch, val_loader, model, prior, args.device)
+            val_loss, val_auroc = validate_vae(
+                epoch, val_loader, model, prior, args.device
+            )
         elif model_name == "gnn":
-            # GNN validation
-            val_scores = model.decision_function(val_dataset.data)
-            val_loss = -1 * np.average(
-                val_scores
-            )  # reverse signage to match other models
+            val_loss, val_auroc = validate_gnn(epoch, val_dataset, model)
         else:
-            val_loss = validate_sklearn(epoch, val_dataset, model)
-        pbar.set_description(f"Epoch: {epoch} | Val Loss: {val_loss}")
+            val_loss, val_auroc = validate_sklearn(epoch, val_dataset, model)
+
+        # Print validation metrics
+        print(
+            f"Epoch: {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val AUROC: {val_auroc:.4f}"
+        )
+        val_loss_log.append(val_loss)
+        val_auroc_log.append(val_auroc)
+
+        # Log to wandb if enabled
+        if args.use_wandb:
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train/loss": train_loss,
+                    "val/loss": val_loss,
+                    "val/auroc": val_auroc,
+                }
+            )
 
         # Save best model
         if len(val_loss_log) == 0 or val_loss < min(val_loss_log):
@@ -167,13 +202,15 @@ def train(args):
                 "results", f"{args.dataset}_{args.benchmark}_{args.seed}.pth"
             )
             pickle.dump(model, open(filename, "wb"))
+            if args.use_wandb:
+                wandb.save(filename)
+
         # Early stopping on validation loss
         if len(val_loss_log[-args.patience :]) >= args.patience and val_loss >= max(
             val_loss_log[-args.patience :]
         ):
             print(f"Early stopping at epoch {epoch}")
             break
-        val_loss_log.append(val_loss)
 
         # Plot losses
         if args.vis:
@@ -190,6 +227,13 @@ def train(args):
                 filename=f"{args.dataset}_{model_name}_loss_val",
                 xlabel="Epoch",
                 ylabel="Validation Loss",
+            )
+            plot_line(
+                range(1, epoch + 1),
+                val_auroc_log,
+                filename=f"{args.dataset}_{model_name}_auroc_val",
+                xlabel="Epoch",
+                ylabel="Validation AUROC",
             )
 
         # Visualise model performance
@@ -259,8 +303,37 @@ def train(args):
         )
     print(f"Min Val Loss: {min(val_loss_log)}")  # Print minimum validation loss
 
+    # Log final metrics to wandb
+    if args.use_wandb:
+        wandb.log(
+            {
+                "best_val_loss": min(val_loss_log),
+                "best_val_auroc": max(val_auroc_log),
+                "final_epoch": epoch,
+            }
+        )
+        wandb.finish()
+
+    # results = {
+    #     "train_loss": train_loss_log,
+    #     "val_loss": val_loss_log,
+    #     "val_auroc": val_auroc_log,
+    #     "val_loss_min": min(val_loss_log),
+    #     "val_auroc_max": max(val_auroc_log),
+    # }
+
+    # os.makedirs("results", exist_ok=True)
+    # with open(f"results/{args.benchmark}_{args.seed}_train_results.json", "w") as f:
+    #     json.dump(results, f, indent=4)
+
+    return model
+
 
 def test(args):
+    """Test the model and output metrics."""
+    print("\nTesting phase...")
+
+    # Load datasets
     if args.dataset in DATASETS.keys():
         train_dataset, test_dataset = [
             DATASETS[args.dataset](split=split, subsample=args.subsample)
@@ -270,63 +343,70 @@ def test(args):
         raise Exception("Invalid dataset specified")
 
     use_vae = True if args.benchmark == "dose" else False
-    outlier_preds = []
-    for seed in tqdm.trange(1, 6):
-        print(
-            f"Run {args.dataset}_{args.benchmark}_{seed} at ", datetime.now()
-        )  # DEBUG
+    model_name = args.benchmark
+    all_results = []
+
+    # Run multiple seeds for ensemble
+    for seed in tqdm.trange(1, 2):
+        print(f"\nRun {args.dataset}_{args.benchmark}_{seed} at {datetime.now()}")
+
         if use_vae:
-            outlier_preds.append(test_vae(seed, args, train_dataset, test_dataset))
+            results = test_vae(seed, args, train_dataset, test_dataset)
+        elif model_name == "gnn":
+            results = test_gnn(seed, args, train_dataset, test_dataset)
         else:
-            outlier_preds.append(test_sklearn(seed, args, train_dataset, test_dataset))
+            results = test_sklearn(seed, args, train_dataset, test_dataset)
 
-    # Compare labels/predictions to labels
-    outlier_preds = np.stack(outlier_preds, axis=0).mean(axis=0)
-    print(
-        f"Benchmark {args.benchmark} AUROC: {roc_auc_score(test_dataset.labels.numpy(), outlier_preds)}"
-    )
+        os.makedirs("results", exist_ok=True)
+        with open(f"results/{args.benchmark}_{seed}_test_results.json", "w") as f:
+            json.dump(results, f, indent=4)
 
+        all_results.append(results)
 
-def evaluate(model, test_dataset, args):
-    """Evaluate the model on the test set."""
-    print("\nEvaluating model...")
-    start_time = time.time()
-
-    # Get predictions
-    scores = model.decision_function(test_dataset.data)
-    predictions = model.predict(test_dataset.data)
-
-    # Calculate metrics
-    accuracy = accuracy_score(test_dataset.labels, predictions)
-    precision = precision_score(test_dataset.labels, predictions)
-    recall = recall_score(test_dataset.labels, predictions)
-    f1 = f1_score(test_dataset.labels, predictions)
-    auroc = roc_auc_score(test_dataset.labels, scores)
-
-    # Print results
-    print("\nTest Results:")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"AUROC: {auroc:.4f}")
-
-    # Save results
-    results = {
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "auroc": auroc,
-        "time": time.time() - start_time,
+    # Average results across seeds
+    avg_results = {
+        metric: np.mean([r[metric] for r in all_results])
+        for metric in all_results[0].keys()
     }
 
-    # Save to file
-    os.makedirs("results", exist_ok=True)
-    with open(f"results/{args.benchmark}_results.json", "w") as f:
-        json.dump(results, f, indent=4)
+    # Print final results
+    print(f"\nFinal Results for {args.benchmark}:")
+    print(f"Accuracy: {avg_results['accuracy']:.4f}")
+    print(f"Precision: {avg_results['precision']:.4f}")
+    print(f"Recall: {avg_results['recall']:.4f}")
+    print(f"F1 Score: {avg_results['f1']:.4f}")
+    print(f"AUROC: {avg_results['auroc']:.4f}")
 
-    return results
+    # Log final results to wandb if enabled
+    if args.use_wandb:
+        wandb.log(
+            {
+                "test/accuracy": avg_results["accuracy"],
+                "test/precision": avg_results["precision"],
+                "test/recall": avg_results["recall"],
+                "test/f1": avg_results["f1"],
+                "test/auroc": avg_results["auroc"],
+            }
+        )
+        # Create a summary table
+        results_table = wandb.Table(
+            columns=["Metric", "Value"],
+            data=[
+                ["Accuracy", avg_results["accuracy"]],
+                ["Precision", avg_results["precision"]],
+                ["Recall", avg_results["recall"]],
+                ["F1 Score", avg_results["f1"]],
+                ["AUROC", avg_results["auroc"]],
+            ],
+        )
+        wandb.log({"test/results": results_table})
+
+    # # Save averaged results
+    # os.makedirs("results", exist_ok=True)
+    # with open(f"results/{args.benchmark}_test_results.json", "w") as f:
+    #     json.dump(avg_results, f, indent=4)
+
+    return avg_results
 
 
 def main():
@@ -342,31 +422,6 @@ def main():
         test(args)
     else:
         raise Exception("Must add flag --train or --test for benchmark functions")
-
-    # Compare results if both models have been evaluated
-    if os.path.exists("results/iforest_results.json") and os.path.exists(
-        "results/gnn_results.json"
-    ):
-        print("\nComparing Results:")
-        with open("results/iforest_results.json", "r") as f:
-            iforest_results = json.load(f)
-        with open("results/gnn_results.json", "r") as f:
-            gnn_results = json.load(f)
-
-        print("\nIsolationForest Results:")
-        print(f"AUROC: {iforest_results['auroc']:.4f}")
-        print(f"Accuracy: {iforest_results['accuracy']:.4f}")
-        print(f"F1 Score: {iforest_results['f1']:.4f}")
-
-        print("\nGNN Results:")
-        print(f"AUROC: {gnn_results['auroc']:.4f}")
-        print(f"Accuracy: {gnn_results['accuracy']:.4f}")
-        print(f"F1 Score: {gnn_results['f1']:.4f}")
-
-        print("\nImprovement:")
-        print(f"AUROC: {gnn_results['auroc'] - iforest_results['auroc']:.4f}")
-        print(f"Accuracy: {gnn_results['accuracy'] - iforest_results['accuracy']:.4f}")
-        print(f"F1 Score: {gnn_results['f1'] - iforest_results['f1']:.4f}")
 
     end = datetime.now()  # DEBUG
     print(f"Time to Complete: {end - start}")  # DEBUG

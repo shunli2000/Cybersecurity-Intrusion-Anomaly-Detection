@@ -1,0 +1,18 @@
+{"time":"2025-06-14T01:17:08.251917-04:00","level":"INFO","msg":"stream: starting","core version":"0.20.1","symlink path":"/Users/qingxuankong/Documents/master_cmu/2025_Summer/Software Design for Data Scientist/BETH_Dataset_Analysis_isla/wandb/run-20250614_011707-dtynq221/logs/debug-core.log"}
+{"time":"2025-06-14T01:17:08.271803-04:00","level":"ERROR","msg":"monitor: failed to initialize GPU asset: monitor: could not start GPU binary: fork/exec /Users/qingxuankong/Documents/master_cmu/2025_Summer/Software Design for Data Scientist/BETH_Dataset_Analysis_isla/venv/lib/python3.10/site-packages/wandb/bin/gpu_stats: bad CPU type in executable"}
+{"time":"2025-06-14T01:17:08.371637-04:00","level":"INFO","msg":"stream: created new stream","id":"dtynq221"}
+{"time":"2025-06-14T01:17:08.371689-04:00","level":"INFO","msg":"stream: started","id":"dtynq221"}
+{"time":"2025-06-14T01:17:08.371716-04:00","level":"INFO","msg":"writer: Do: started","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:08.371749-04:00","level":"INFO","msg":"handler: started","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:08.371724-04:00","level":"INFO","msg":"sender: started","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:08.419002-04:00","level":"ERROR","msg":"HTTP error","status":403,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-06-14T01:17:08.419165-04:00","level":"ERROR","msg":"runupserter: failed to init run","error":"returned error 403: {\"data\":{\"upsertBucket\":null},\"errors\":[{\"message\":\"permission denied\",\"path\":[\"upsertBucket\"],\"extensions\":{\"code\":\"PERMISSION_ERROR\"}}]}"}
+{"time":"2025-06-14T01:17:09.422138-04:00","level":"INFO","msg":"stream: closing","id":"dtynq221"}
+{"time":"2025-06-14T01:17:09.423029-04:00","level":"ERROR","msg":"sender: uploadConfigFile: stream: no run"}
+{"time":"2025-06-14T01:17:09.548585-04:00","level":"ERROR","msg":"HTTP error","status":404,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-06-14T01:17:09.548875-04:00","level":"ERROR","msg":"runfiles: CreateRunFiles returned error: returned error 404: {\"data\":{\"createRunFiles\":null},\"errors\":[{\"message\":\"project islakong/BETH_Dataset_Analysis not found during createRunFiles\",\"path\":[\"createRunFiles\"]}]}"}
+{"time":"2025-06-14T01:17:09.550128-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-06-14T01:17:09.550281-04:00","level":"INFO","msg":"handler: closed","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:09.550314-04:00","level":"INFO","msg":"writer: Close: closed","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:09.550336-04:00","level":"INFO","msg":"sender: closed","stream_id":"dtynq221"}
+{"time":"2025-06-14T01:17:09.55073-04:00","level":"INFO","msg":"stream: closed","id":"dtynq221"}

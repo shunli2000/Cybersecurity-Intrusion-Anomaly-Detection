@@ -20,7 +20,6 @@ class BETHDataset(TensorDataset):
     """
 
     def __init__(self, split="train", subsample=0):
-        print(f"Loading {split} dataset...")  # Debug print
         if split == "train":
             data = pd.read_csv("data/labelled_training_data.csv")
         elif split == "val":
@@ -29,11 +28,9 @@ class BETHDataset(TensorDataset):
             data = pd.read_csv("data/labelled_testing_data.csv")
         else:
             raise Exception("Error: Invalid 'split' given")
-        print(f"Dataset loaded. Shape: {data.shape}")  # Debug print
 
         self.name = split
         # Select columns and perform pre-processing
-        print("Preprocessing data...")  # Debug print
         labels = pd.DataFrame(data[["sus"]])
         data = pd.DataFrame(
             data[
@@ -67,19 +64,15 @@ class BETHDataset(TensorDataset):
             lambda x: 0 if x == 0 else (1 if x > 0 else 2)
         )  # Map to success/success with value/error
 
-        print("Converting to tensors...")  # Debug print
         # Extract values
         self.data = torch.as_tensor(data.values, dtype=torch.int64)
         self.labels = torch.as_tensor(labels.values, dtype=torch.int64)
 
         # Subsample data
         if subsample > 0:
-            print(f"Subsampling data with factor {subsample}...")  # Debug print
             self.data, self.labels = self.data[::subsample], self.labels[::subsample]
-            print(f"Subsampled shape: {self.data.shape}")  # Debug print
 
         super().__init__(self.data, self.labels)
-        print(f"{split} dataset initialization complete")  # Debug print
 
     def get_input_shape(
         self,

@@ -2,7 +2,7 @@ import numpy as np
 import os
 import seaborn as sns
 from sklearn.decomposition import PCA
-from gnn import GNNBenchmark
+from gnn import GAEBenchmark
 
 BENCHMARK_LIST = ["rcov", "svm", "ifor", "dose"]
 
@@ -40,8 +40,10 @@ class WhitenedBenchmark:
 
 def get_benchmark(model_name, args):
     if model_name == "gnn":
-        return GNNBenchmark(
-            input_dim=args.input_dim, hidden_dim=args.hidden_size, num_layers=3
+        return GAEBenchmark(
+            input_dim=args.input_dim,
+            hidden_dim=args.hidden_size,
+            num_layers=args.num_layers,
         )
     else:
         raise ValueError(f"Unknown model name: {model_name}")

@@ -25,9 +25,9 @@ def configure():
     parser.add_argument(
         "--subsample",
         type=int,
-        default=None,
+        default=0,
         metavar="S",
-        help="Factor by which to subsample the dataset",
+        help="Factor by which to subsample the dataset (0 means no subsampling)",
     )
     parser.add_argument(
         "--vis-latents",
@@ -80,6 +80,28 @@ def configure():
     )
     parser.add_argument(
         "--input-dim", type=int, default=None, help="Input dimension (for GNN)"
+    )
+    # GNN
+    parser.add_argument(
+        "--num-layers", type=int, default=3, help="Number of layers in GNN"
+    )
+    # Wandb configuration
+    parser.add_argument("--use_wandb", action="store_true", help="Enable wandb logging")
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default="islakong-carnegie-mellon-university",
+        help="Wandb entity/username",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="BETH",
+        help="Wandb project name",
+    )
+    parser.add_argument("--wandb_name", type=str, default=None, help="Wandb run name")
+    parser.add_argument(
+        "--wandb_tags", type=str, nargs="+", default=[], help="Tags for wandb run"
     )
     args = parser.parse_args()
     use_cuda = torch.cuda.is_available() and not args.disable_cuda

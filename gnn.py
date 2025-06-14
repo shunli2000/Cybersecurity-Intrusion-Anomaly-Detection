@@ -1,139 +1,171 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, global_mean_pool
-from torch_geometric.data import Data
-from torch_geometric.utils import to_undirected
+from torch_geometric.nn import GCNConv, GAE
+from torch_geometric.utils import to_undirected, to_dense_adj, dense_to_sparse
 from torch_geometric.nn.pool import knn_graph
+from torch_geometric.data import Data
 import numpy as np
+from tqdm import tqdm
+import wandb
 
 
-class GNNModel(nn.Module):
+class GAEEncoder(nn.Module):
     def __init__(self, input_dim, hidden_dim=64, num_layers=3):
-        super(GNNModel, self).__init__()
-        # Encoder layers
+        super().__init__()
         self.convs = nn.ModuleList()
+        # first layer
         self.convs.append(GCNConv(input_dim, hidden_dim))
-
-        for _ in range(num_layers - 1):
+        # remaining hidden layers
+        for _ in range(num_layers - 2):
             self.convs.append(GCNConv(hidden_dim, hidden_dim))
+        # final embedding layer
+        self.convs.append(GCNConv(hidden_dim, hidden_dim))
 
-        # Decoder layers for reconstruction
-        self.decoder = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim),
-        )
-
-        # Anomaly scoring layer
-        self.anomaly_head = nn.Linear(hidden_dim, 1)
-
-    def forward(self, x, edge_index, batch=None):
-        # Store intermediate representations
-        node_embeddings = []
-
-        # Encoder: Apply GNN layers
-        for conv in self.convs:
+    def forward(self, x, edge_index):
+        for conv in self.convs[:-1]:
             x = conv(x, edge_index)
             x = F.relu(x)
             x = F.dropout(x, p=0.2, training=self.training)
-            node_embeddings.append(x)
-
-        # Get final node embeddings
-        final_embeddings = node_embeddings[-1]
-
-        # Decoder: Reconstruct input features
-        reconstructed = self.decoder(final_embeddings)
-
-        # Anomaly scores
-        anomaly_scores = self.anomaly_head(final_embeddings)
-
-        return {
-            "node_embeddings": final_embeddings,
-            "reconstructed": reconstructed,
-            "anomaly_scores": anomaly_scores,
-        }
+        # no activation on last layer
+        return self.convs[-1](x, edge_index)
 
 
-class GNNBenchmark:
+class GAEBenchmark:
     def __init__(self, input_dim, hidden_dim=64, num_layers=3):
-        self.model = GNNModel(input_dim, hidden_dim, num_layers)
+        # build a PyG GAE
+        self.encoder = GAEEncoder(input_dim, hidden_dim, num_layers)
+        self.model = GAE(self.encoder)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
     def _create_graph(self, data):
-        """Convert data points to a graph structure using k-nearest neighbors."""
-        # Handle tensor conversion properly
+        # data: numpy array or torch.Tensor [N, F]
         if isinstance(data, torch.Tensor):
             data = data.detach().cpu().numpy()
-
-        # Convert to tensor and move to device
         x = torch.tensor(data, dtype=torch.float, device=self.device)
-
-        # Create k-nearest neighbors graph directly using PyG's knn_graph
-        k = min(5, len(data) - 1)  # Use k=5 or less if dataset is small
+        k = min(5, len(data) - 1)
         edge_index = knn_graph(x, k=k, loop=False)
-
-        # Ensure undirected edges
         edge_index = to_undirected(edge_index)
-
         return Data(x=x, edge_index=edge_index)
 
-    def fit(self, X):
+    def fit(self, X, epochs=100, lr=1e-3):
         """Train the GNN model."""
-        print("GNN: Starting fit method")
         self.model.train()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-        # Create graph from data
-        print("GNN: Creating graph from data")
         data = self._create_graph(X)
-        print(
-            f"GNN: Graph created with {data.num_nodes} nodes and {data.num_edges} edges"
-        )
-
-        # Training loop
-        total_loss = 0
-        print("GNN: Starting training loop")
-        for epoch in range(100):  # 100 epochs
+        pbar = tqdm(range(1, epochs + 1), desc="Training GNN", disable=not wandb.run)
+        for epoch in pbar:
             optimizer.zero_grad()
-
-            # Forward pass
-            outputs = self.model(data.x, data.edge_index)
-
-            # Calculate reconstruction loss (MSE between input features and reconstructed features)
-            reconstruction_loss = F.mse_loss(outputs["reconstructed"], data.x)
-
-            # Calculate anomaly score loss (encourage normal samples to have low scores)
-            anomaly_loss = torch.mean(torch.abs(outputs["anomaly_scores"]))
-
-            # Combine losses
-            loss = reconstruction_loss + 0.1 * anomaly_loss
-
+            # encode → z: [N, hidden_dim]
+            z = self.model.encode(data.x, data.edge_index)
+            # loss = edge-reconstruction loss
+            loss = self.model.recon_loss(z, data.edge_index)
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
 
-            if epoch % 10 == 0:  # Print every 10 epochs
-                print(
-                    f"GNN: Epoch {epoch}, Total Loss: {loss.item():.4f}, "
-                    f"Recon Loss: {reconstruction_loss.item():.4f}, "
-                    f"Anomaly Loss: {anomaly_loss.item():.4f}"
-                )
+            # Update progress bar
+            pbar.set_description(f"Epoch {epoch}/{epochs}")
+            pbar.set_postfix({"recon_loss": f"{loss.item():.4f}"})
 
-        avg_loss = total_loss / 100  # Average loss over epochs
-        print(f"GNN: Training completed. Average loss: {avg_loss:.4f}")
-        return avg_loss, self
+            # Log to wandb if enabled
+            if wandb.run is not None:
+                wandb.log({"gnn/gnn_epoch": epoch, "gnn/recon_loss": loss.item()})
+
+        return loss.item(), self
 
     def decision_function(self, X):
-        """Compute anomaly scores for each node."""
+        """
+        Returns one score per node: its MSE between
+        reconstructed adjacency row and true adjacency row.
+        """
         self.model.eval()
         with torch.no_grad():
             data = self._create_graph(X)
-            outputs = self.model(data.x, data.edge_index)
-            return outputs["anomaly_scores"].cpu().numpy().flatten()
+            z = self.model.encode(data.x, data.edge_index)
+            # reconstruct full adjacency
+            adj_rec = torch.sigmoid(z @ z.t())  # [N,N]
+            adj_true = to_dense_adj(data.edge_index)[0].to(adj_rec)  # [N,N]
+            # per-node MSE
+            errors = ((adj_rec - adj_true) ** 2).mean(dim=1)
+        return errors.cpu().numpy()
 
-    def predict(self, X):
-        """Predict normal (1) or anomaly (-1) for each node."""
+    def predict(self, X, percentile=95):
+        """
+        Label as anomaly (–1) any node whose
+        recon-error is above the given percentile.
+        """
         scores = self.decision_function(X)
-        return np.where(scores > 0, 1, -1)  # Threshold at 0
+        thresh = np.percentile(scores, percentile)
+        return np.where(scores > thresh, -1, 1)
+
+
+class GraphAutoencoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_layers):
+        super(GraphAutoencoder, self).__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
+        # Encoder layers
+        self.encoder_layers = nn.ModuleList()
+        self.encoder_layers.append(GCNConv(input_dim, hidden_dim))
+        for _ in range(num_layers - 1):
+            self.encoder_layers.append(GCNConv(hidden_dim, hidden_dim))
+
+        # Decoder layers
+        self.decoder_layers = nn.ModuleList()
+        for _ in range(num_layers - 1):
+            self.decoder_layers.append(GCNConv(hidden_dim, hidden_dim))
+        self.decoder_layers.append(GCNConv(hidden_dim, input_dim))
+
+    def forward(self, x, edge_index):
+        # Encoder
+        h = x
+        for layer in self.encoder_layers:
+            h = F.relu(layer(h, edge_index))
+
+        # Decoder
+        for layer in self.decoder_layers:
+            h = F.relu(layer(h, edge_index))
+
+        return h
+
+    def fit(self, dataset, epochs, lr, batch_size, device, verbose=True):
+        """Train the GNN model."""
+        self.train()
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+        # Convert data to PyTorch tensors
+        X = torch.FloatTensor(dataset.data).to(device)
+        edge_index, _ = dense_to_sparse(torch.ones((X.shape[0], X.shape[0])))
+        edge_index = edge_index.to(device)
+
+        # Training loop with progress bar
+        pbar = tqdm(range(epochs), desc="Training GNN", disable=not verbose)
+        for epoch in pbar:
+            optimizer.zero_grad()
+            output = self(X, edge_index)
+            loss = F.mse_loss(output, X)
+            loss.backward()
+            optimizer.step()
+
+            # Update progress bar
+            pbar.set_description(f"Epoch {epoch+1}/{epochs}")
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+            # Log to wandb if available
+            if hasattr(self, "wandb") and self.wandb is not None:
+                self.wandb.log({"epoch": epoch, "reconstruction_loss": loss.item()})
+
+    def predict(self, dataset, device):
+        """Predict anomalies using reconstruction error."""
+        self.eval()
+        with torch.no_grad():
+            X = torch.FloatTensor(dataset.data).to(device)
+            edge_index, _ = dense_to_sparse(torch.ones((X.shape[0], X.shape[0])))
+            edge_index = edge_index.to(device)
+            output = self(X, edge_index)
+            reconstruction_error = F.mse_loss(output, X, reduction="none").mean(dim=1)
+            return reconstruction_error.cpu().numpy()

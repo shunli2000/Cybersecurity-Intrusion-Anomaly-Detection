@@ -1,0 +1,16 @@
+{"time":"2025-06-14T01:23:41.088386-04:00","level":"INFO","msg":"stream: starting","core version":"0.20.1","symlink path":"/Users/qingxuankong/Documents/master_cmu/2025_Summer/Software Design for Data Scientist/BETH_Dataset_Analysis_isla/wandb/run-20250614_012340-bmezei4j/logs/debug-core.log"}
+{"time":"2025-06-14T01:23:41.10364-04:00","level":"ERROR","msg":"monitor: failed to initialize GPU asset: monitor: could not start GPU binary: fork/exec /Users/qingxuankong/Documents/master_cmu/2025_Summer/Software Design for Data Scientist/BETH_Dataset_Analysis_isla/venv/lib/python3.10/site-packages/wandb/bin/gpu_stats: bad CPU type in executable"}
+{"time":"2025-06-14T01:23:41.207566-04:00","level":"INFO","msg":"stream: created new stream","id":"bmezei4j"}
+{"time":"2025-06-14T01:23:41.207616-04:00","level":"INFO","msg":"stream: started","id":"bmezei4j"}
+{"time":"2025-06-14T01:23:41.207676-04:00","level":"INFO","msg":"sender: started","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:23:41.207672-04:00","level":"INFO","msg":"handler: started","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:23:41.207664-04:00","level":"INFO","msg":"writer: Do: started","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:23:41.335889-04:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-06-14T01:24:54.717605-04:00","level":"INFO","msg":"stream: closing","id":"bmezei4j"}
+{"time":"2025-06-14T01:24:54.718165-04:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-06-14T01:24:54.718266-04:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-06-14T01:24:55.03019-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-06-14T01:24:55.274645-04:00","level":"INFO","msg":"sender: closed","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:24:55.275518-04:00","level":"INFO","msg":"handler: closed","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:24:55.275513-04:00","level":"INFO","msg":"writer: Close: closed","stream_id":"bmezei4j"}
+{"time":"2025-06-14T01:24:55.275844-04:00","level":"INFO","msg":"stream: closed","id":"bmezei4j"}
