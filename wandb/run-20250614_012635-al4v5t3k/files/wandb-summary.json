@@ -1,1 +1,0 @@
-{"best_val_loss":-0.38471847772598267,"_wandb":{"runtime":166},"_runtime":166.56889,"_step":505,"epoch":5,"val/auroc":0.6684378320935176,"final_epoch":5,"gnn/gnn_epoch":100,"best_val_auroc":0.7167906482465463,"gnn/recon_loss":0.9065111875534058,"val/loss":-0.2710469961166382,"_timestamp":1.749878962500695e+09,"train/loss":0.9065111875534058}
