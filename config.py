@@ -46,6 +46,13 @@ def configure():
         "--batch-size", type=int, default=32, metavar="B", help="Minibatch size"
     )
     parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        metavar="W",
+        help="Number of workers for data loading",
+    )
+    parser.add_argument(
         "--epochs", type=int, default=20, metavar="N", help="Training epochs"
     )
     parser.add_argument(
@@ -86,22 +93,22 @@ def configure():
         "--num-layers", type=int, default=3, help="Number of layers in GNN"
     )
     # Wandb configuration
-    parser.add_argument("--use_wandb", action="store_true", help="Enable wandb logging")
+    parser.add_argument("--use-wandb", action="store_true", help="Enable wandb logging")
     parser.add_argument(
-        "--wandb_entity",
+        "--wandb-entity",
         type=str,
         default="islakong-carnegie-mellon-university",
         help="Wandb entity/username",
     )
     parser.add_argument(
-        "--wandb_project",
+        "--wandb-project",
         type=str,
         default="BETH",
         help="Wandb project name",
     )
-    parser.add_argument("--wandb_name", type=str, default=None, help="Wandb run name")
+    parser.add_argument("--wandb-name", type=str, default=None, help="Wandb run name")
     parser.add_argument(
-        "--wandb_tags", type=str, nargs="+", default=[], help="Tags for wandb run"
+        "--wandb-tags", type=str, nargs="+", default=[], help="Tags for wandb run"
     )
     args = parser.parse_args()
     use_cuda = torch.cuda.is_available() and not args.disable_cuda

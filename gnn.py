@@ -32,47 +32,101 @@ class GAEEncoder(nn.Module):
 
 
 class GAEBenchmark:
-    def __init__(self, input_dim, hidden_dim=64, num_layers=3):
+    def __init__(self, input_dim, hidden_dim=64, num_layers=3, outliers_fraction=0.1):
         # build a PyG GAE
         self.encoder = GAEEncoder(input_dim, hidden_dim, num_layers)
         self.model = GAE(self.encoder)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
+        self.outliers_fraction = outliers_fraction
 
-    def _create_graph(self, data):
-        # data: numpy array or torch.Tensor [N, F]
-        if isinstance(data, torch.Tensor):
-            data = data.detach().cpu().numpy()
-        x = torch.tensor(data, dtype=torch.float, device=self.device)
-        k = min(5, len(data) - 1)
-        edge_index = knn_graph(x, k=k, loop=False)
-        edge_index = to_undirected(edge_index)
-        return Data(x=x, edge_index=edge_index)
+    def _create_graph(self, X):
+        """Create a graph from the input data.
+        Args:
+            X: Input data tensor of shape [batch_size, num_features]
+        Returns:
+            Data object with x and edge_index
+        """
+        # Ensure X is 2D and float
+        if len(X.shape) == 1:
+            X = X.unsqueeze(0)  # Add batch dimension if missing
+
+        # Convert to float if needed and move to device
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float)
+        elif X.dtype != torch.float:
+            X = X.float()
+        X = X.to(self.device)
+
+        # Create a fully connected graph with self-loops
+        num_nodes = X.size(0)
+        if num_nodes == 0:
+            raise ValueError("Input tensor has 0 nodes")
+
+        # Create edge_index for a fully connected graph
+        rows = []
+        cols = []
+        for i in range(num_nodes):
+            for j in range(num_nodes):
+                rows.append(i)
+                cols.append(j)
+
+        # Create edge_index as long tensor (required by GCNConv)
+        edge_index = torch.tensor([rows, cols], dtype=torch.long, device=self.device)
+
+        # Create PyG Data object
+        return Data(x=X, edge_index=edge_index)
 
     def fit(self, X, epochs=100, lr=1e-3):
-        """Train the GNN model."""
+        """Train the GNN model.
+        Args:
+            X: DataLoader containing the data
+            epochs: Number of epochs to train
+            lr: Learning rate
+        """
         self.model.train()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-        data = self._create_graph(X)
-        pbar = tqdm(range(1, epochs + 1), desc="Training GNN", disable=not wandb.run)
-        for epoch in pbar:
-            optimizer.zero_grad()
-            # encode → z: [N, hidden_dim]
-            z = self.model.encode(data.x, data.edge_index)
-            # loss = edge-reconstruction loss
-            loss = self.model.recon_loss(z, data.edge_index)
-            loss.backward()
-            optimizer.step()
+        # Calculate total number of iterations
+        total_iterations = epochs * len(X)
 
-            # Update progress bar
-            pbar.set_description(f"Epoch {epoch}/{epochs}")
-            pbar.set_postfix({"recon_loss": f"{loss.item():.4f}"})
+        pbar = tqdm(range(total_iterations), desc="Training GNN", disable=not wandb.run)
+        iteration = 0
 
-            # Log to wandb if enabled
-            if wandb.run is not None:
-                wandb.log({"gnn/gnn_epoch": epoch, "gnn/recon_loss": loss.item()})
+        for epoch in range(epochs):
+            for batch_X in X:
+                # Create graph for this batch
+                data = self._create_graph(batch_X)
 
+                optimizer.zero_grad()
+                # encode → z: [batch_size, hidden_dim]
+                z = self.model.encode(data.x, data.edge_index)
+                # loss = edge-reconstruction loss
+                loss = self.model.recon_loss(z, data.edge_index)
+                loss.backward()
+                optimizer.step()
+
+                # Update progress bar
+                iteration += 1
+                pbar.set_description(
+                    f"Epoch {epoch+1}/{epochs} Batch {iteration % len(X) + 1}/{len(X)}"
+                )
+                pbar.set_postfix({"recon_loss": f"{loss.item():.4f}"})
+
+                # Log to wandb if enabled
+                if wandb.run is not None:
+                    wandb.log(
+                        {
+                            "gnn/epoch": epoch + 1,
+                            "gnn/batch": iteration % len(X) + 1,
+                            "gnn/iteration": iteration,
+                            "gnn/recon_loss": loss.item(),
+                        }
+                    )
+
+                pbar.update(1)
+
+        pbar.close()
         return loss.item(), self
 
     def decision_function(self, X):

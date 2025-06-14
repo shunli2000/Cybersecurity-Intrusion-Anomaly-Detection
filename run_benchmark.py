@@ -69,14 +69,20 @@ def train(args):
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=args.num_workers,
         pin_memory=True,
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=args.batch_size, num_workers=4, pin_memory=True
+        val_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=True,
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=args.batch_size, num_workers=4, pin_memory=True
+        test_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=True,
     )
 
     if args.vis and hasattr(train_dataset, "plot"):

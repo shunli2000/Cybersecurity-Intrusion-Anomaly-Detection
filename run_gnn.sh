@@ -1,16 +1,19 @@
 #!/bin/bash
 
 # Run IsolationForest for seeds 1-5
-echo "Running GNN with seed $seed"
-python run_benchmark.py --train --benchmark gnn --subsample 100 --use_wandb --wandb_name "gnn_subsample_100" --wandb_tags "gnn"
-echo "Completed seed $seed"
+echo "Running training phase ..."
+python run_benchmark.py --train \
+    --benchmark gnn --batch-size 128 --num-workers 16 \
+    --subsample 100 \
+    --use-wandb --wandb-name "gnn_subsample_100_train" --wandb-tags "gnn, train"
+echo "Completed training"
 echo "----------------------------------------"
 
 echo "All training runs completed!"
 
 # Run testing only for all seeds
-echo "Running testing phase for all seeds..."
-python run_benchmark.py --test --benchmark gnn --subsample 100
+echo "Running testing phase ..."
+python run_benchmark.py --test --benchmark gnn --subsample 100 --use_wandb --wandb_name "gnn_subsample_100_test" --wandb_tags "gnn" "test"
 echo "Completed testing"
 echo "----------------------------------------"
 done
