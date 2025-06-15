@@ -20,44 +20,30 @@
                                 <label for="file" class="form-label">Upload CSV File</label>
                                 <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
                             </div>
-                            
-                            <div class="mb-3">
-                                <label for="modelType" class="form-label">Select Model</label>
-                                <select class="form-select" id="modelType" name="model_type">
-                                    <option value="ifor">Isolation Forest</option>
-                                    <option value="svm">SVM</option>
-                                    <option value="dose">DOSE</option>
-                                </select>
-                            </div>
-                            
                             <button type="submit" class="btn btn-primary w-100">Analyze</button>
                         </form>
                     </div>
                 </div>
-                
-                <div id="results" class="mt-4" style="display: none;">
-                    <div class="card">
-                        <div class="card-header">
-                            <h5 class="mb-0">Analysis Results</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Index</th>
-                                            <th>Prediction</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="resultsBody">
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
+
                 <div id="error" class="alert alert-danger mt-4" style="display: none;"></div>
+
+                <div id="results" class="mt-4" style="display: none;">
+                    <h2 class="text-center">Analysis Results</h2>
+                    <div class="alert alert-info" role="alert" id="anomalyRateDisplay">
+                        Anomaly Rate: <span id="rateValue">N/A</span>%
+                    </div>
+                    <table class="table table-striped table-hover">
+                        <thead class="">
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User ID</th>
+                                <th>Prediction (1=Anomaly)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -70,38 +56,68 @@
             const resultsDiv = document.getElementById('results');
             const errorDiv = document.getElementById('error');
             const resultsBody = document.getElementById('resultsBody');
-            
+            const anomalyRateDisplay = document.getElementById('anomalyRateDisplay');
+            const rateValueSpan = document.getElementById('rateValue');
+
+            // Clear previous states
+            errorDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            resultsDiv.style.display = 'none';
+            resultsBody.innerHTML = '';
+            rateValueSpan.textContent = 'N/A';
+
+
             try {
-                const response = await fetch('/upload', {
+                console.log("Sending request to /predict on client...");
+                const response = await fetch('/predict', { 
                     method: 'POST',
                     body: formData
                 });
+
+                console.log("Received response from /predict:", response.status, response.statusText);
+
+                if (!response.ok) {
+                    let errorMsg = `HTTP error! status: ${response.status}`;
+                    try {
+                        const errData = await response.json();
+                        if (errData && errData.error) {
+                            errorMsg = errData.error;
+                        }
+                    } catch (jsonError) {
+                        console.error("Could not parse error response as JSON:", jsonError);
+                    }
+                    throw new Error(errorMsg);
+                }
                 
                 const data = await response.json();
+                console.log("Parsed data from /predict:", data);
                 
                 if (data.error) {
-                    errorDiv.textContent = data.error;
+                    errorDiv.textContent = "Error: " + data.error;
                     errorDiv.style.display = 'block';
                     resultsDiv.style.display = 'none';
-                } else {
+                } else if (data.results && typeof data.anomaly_rate !== 'undefined') {
                     errorDiv.style.display = 'none';
                     resultsDiv.style.display = 'block';
                     
-                    // Clear previous results
-                    resultsBody.innerHTML = '';
-                    
-                    // Add new results
+                    rateValueSpan.textContent = data.anomaly_rate;
+
                     data.results.forEach(result => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
-                            <td>${result.index}</td>
+                            <td>${result.timestamp}</td>
+                            <td>${result.userId}</td>
                             <td>${result.prediction}</td>
                         `;
                         resultsBody.appendChild(row);
                     });
+                } else {
+                    throw new Error("Unexpected response format from server.");
                 }
+
             } catch (error) {
-                errorDiv.textContent = 'An error occurred while processing your request.';
+                console.error("Error in uploadForm submit handler:", error);
+                errorDiv.textContent = 'An error occurred while processing your request: ' + error.message;
                 errorDiv.style.display = 'block';
                 resultsDiv.style.display = 'none';
             }
