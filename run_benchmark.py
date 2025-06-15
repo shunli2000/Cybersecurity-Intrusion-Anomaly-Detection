@@ -69,20 +69,14 @@ def train(args):
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
+        num_workers=4,
         pin_memory=True,
     )
     val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=True,
+        val_dataset, batch_size=args.batch_size, num_workers=4, pin_memory=True
     )
     test_loader = DataLoader(
-        test_dataset,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=True,
+        test_dataset, batch_size=args.batch_size, num_workers=4, pin_memory=True
     )
 
     if args.vis and hasattr(train_dataset, "plot"):
@@ -141,24 +135,6 @@ def train(args):
     ##########################
     train_loss_log, val_loss_log, val_auroc_log = [], [], []
 
-    # Initialize wandb if enabled
-    if args.use_wandb:
-        wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            config={
-                "dataset": args.dataset,
-                "benchmark": args.benchmark,
-                "seed": args.seed,
-                "batch_size": args.batch_size,
-                "learning_rate": args.learning_rate,
-                "hidden_size": args.hidden_size,
-                "num_layers": args.num_layers,
-            },
-            name=args.wandb_name,
-            tags=args.wandb_tags,
-        )
-
     # Training loop
     for epoch in range(1, args.epochs + 1):
         # Train model
@@ -171,8 +147,6 @@ def train(args):
         else:
             train_loss, model = train_sklearn(epoch, train_dataset, model)
 
-        # Print training loss
-        print(f"Epoch: {epoch} | Train Loss: {train_loss:.4f}")
         train_loss_log.append(train_loss)
 
         # Validate model
@@ -185,12 +159,10 @@ def train(args):
         else:
             val_loss, val_auroc = validate_sklearn(epoch, val_dataset, model)
 
-        # Print validation metrics
+        # Print metrics
         print(
             f"Epoch: {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val AUROC: {val_auroc:.4f}"
         )
-        val_loss_log.append(val_loss)
-        val_auroc_log.append(val_auroc)
 
         # Log to wandb if enabled
         if args.use_wandb:
@@ -204,7 +176,7 @@ def train(args):
             )
 
         # Save best model
-        if len(val_loss_log) == 0 or val_loss <= min(val_loss_log):
+        if len(val_loss_log) == 0 or val_loss < min(val_loss_log):
             filename = os.path.join(
                 "results", f"{args.dataset}_{args.benchmark}_{args.seed}.pth"
             )
@@ -218,6 +190,10 @@ def train(args):
         ):
             print(f"Early stopping at epoch {epoch}")
             break
+
+        # Log validation metrics
+        val_loss_log.append(val_loss)
+        val_auroc_log.append(val_auroc)
 
         # Plot losses
         if args.vis:
@@ -319,7 +295,6 @@ def train(args):
                 "final_epoch": epoch,
             }
         )
-        wandb.finish()
 
     # results = {
     #     "train_loss": train_loss_log,
@@ -351,69 +326,51 @@ def test(args):
 
     use_vae = True if args.benchmark == "dose" else False
     model_name = args.benchmark
-    all_results = []
 
-    # Run multiple seeds for ensemble
-    for seed in tqdm.trange(1, 2):
-        print(f"\nRun {args.dataset}_{args.benchmark}_{seed} at {datetime.now()}")
+    # Run test
+    print(f"\nRun {args.dataset}_{args.benchmark}_1 at {datetime.now()}")
 
-        if use_vae:
-            results = test_vae(seed, args, train_dataset, test_dataset)
-        elif model_name == "gnn":
-            results = test_gnn(seed, args, train_dataset, test_dataset)
-        else:
-            results = test_sklearn(seed, args, train_dataset, test_dataset)
+    if use_vae:
+        results = test_vae(1, args, train_dataset, test_dataset)
+    elif model_name == "gnn":
+        results = test_gnn(1, args, train_dataset, test_dataset)
+    else:
+        results = test_sklearn(1, args, train_dataset, test_dataset)
 
-        os.makedirs("results", exist_ok=True)
-        with open(f"results/{args.benchmark}_{seed}_test_results.json", "w") as f:
-            json.dump(results, f, indent=4)
+    # Print results
+    print(f"\nResults for {args.benchmark}:")
+    print(f"Accuracy: {results['accuracy']:.4f}")
+    print(f"Precision: {results['precision']:.4f}")
+    print(f"Recall: {results['recall']:.4f}")
+    print(f"F1 Score: {results['f1']:.4f}")
+    print(f"AUROC: {results['auroc']:.4f}")
 
-        all_results.append(results)
-
-    # Average results across seeds
-    avg_results = {
-        metric: np.mean([r[metric] for r in all_results])
-        for metric in all_results[0].keys()
-    }
-
-    # Print final results
-    print(f"\nFinal Results for {args.benchmark}:")
-    print(f"Accuracy: {avg_results['accuracy']:.4f}")
-    print(f"Precision: {avg_results['precision']:.4f}")
-    print(f"Recall: {avg_results['recall']:.4f}")
-    print(f"F1 Score: {avg_results['f1']:.4f}")
-    print(f"AUROC: {avg_results['auroc']:.4f}")
-
-    # Log final results to wandb if enabled
+    # Log results to wandb if enabled
     if args.use_wandb:
         wandb.log(
             {
-                "test/accuracy": avg_results["accuracy"],
-                "test/precision": avg_results["precision"],
-                "test/recall": avg_results["recall"],
-                "test/f1": avg_results["f1"],
-                "test/auroc": avg_results["auroc"],
+                "test/accuracy": results["accuracy"],
+                "test/precision": results["precision"],
+                "test/recall": results["recall"],
+                "test/f1": results["f1"],
+                "test/auroc": results["auroc"],
             }
         )
-        # Create a summary table
+
+        # Create a table with the results
         results_table = wandb.Table(
             columns=["Metric", "Value"],
             data=[
-                ["Accuracy", avg_results["accuracy"]],
-                ["Precision", avg_results["precision"]],
-                ["Recall", avg_results["recall"]],
-                ["F1 Score", avg_results["f1"]],
-                ["AUROC", avg_results["auroc"]],
+                ["Accuracy", results["accuracy"]],
+                ["Precision", results["precision"]],
+                ["Recall", results["recall"]],
+                ["F1 Score", results["f1"]],
+                ["AUROC", results["auroc"]],
             ],
         )
         wandb.log({"test/results": results_table})
 
-    # # Save averaged results
-    # os.makedirs("results", exist_ok=True)
-    # with open(f"results/{args.benchmark}_test_results.json", "w") as f:
-    #     json.dump(avg_results, f, indent=4)
-
-    return avg_results
+    return results
 
 
 def main():
@@ -423,12 +380,31 @@ def main():
     os.makedirs("stats", exist_ok=True)  # Where summary stats for DoSE are stored
     args = configure()
 
+    # Initialize wandb if enabled
+    if args.use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            config={
+                "dataset": args.dataset,
+                "benchmark": args.benchmark,
+                "seed": args.seed,
+                "batch_size": args.batch_size,
+                "learning_rate": args.learning_rate,
+                "hidden_size": args.hidden_size,
+                "num_layers": args.num_layers,
+            },
+            name=args.wandb_name,
+        )
+
     if args.train:
         train(args)
-    elif args.test:
+
+    if args.test:
         test(args)
-    else:
-        raise Exception("Must add flag --train or --test for benchmark functions")
+
+    if args.use_wandb:
+        wandb.finish()
 
     end = datetime.now()  # DEBUG
     print(f"Time to Complete: {end - start}")  # DEBUG

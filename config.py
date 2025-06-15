@@ -95,6 +95,7 @@ def configure():
     parser.add_argument(
         "--num-layers", type=int, default=3, help="Number of layers in GNN"
     )
+    parser.add_argument("--k", type=int, default=5, help="Number of neighbors for GNN")
     # Wandb configuration
     parser.add_argument("--use-wandb", action="store_true", help="Enable wandb logging")
     parser.add_argument(

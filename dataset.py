@@ -28,7 +28,6 @@ class BETHDataset(TensorDataset):
             data = pd.read_csv("data/labelled_testing_data.csv")
         else:
             raise Exception("Error: Invalid 'split' given")
-
         self.name = split
         # Select columns and perform pre-processing
         labels = pd.DataFrame(data[["sus"]])
@@ -63,14 +62,13 @@ class BETHDataset(TensorDataset):
         data["returnValue"] = data["returnValue"].map(
             lambda x: 0 if x == 0 else (1 if x > 0 else 2)
         )  # Map to success/success with value/error
-
         # Extract values
         self.data = torch.as_tensor(data.values, dtype=torch.int64)
         self.labels = torch.as_tensor(labels.values, dtype=torch.int64)
-
         # Subsample data
         if subsample > 0:
             self.data, self.labels = self.data[::subsample], self.labels[::subsample]
+
         super().__init__(self.data, self.labels)
 
     def get_input_shape(

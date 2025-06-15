@@ -86,7 +86,6 @@ class GAEBenchmark:
         data = self._create_graph(X)
 
         # Training loop
-        print(f"Training GNN for {self.epochs} epochs")
         for epoch in tqdm(range(self.epochs), desc="Training GNN"):
             optimizer.zero_grad()
             # encode → z: [n_samples, hidden_dim]
@@ -135,7 +134,7 @@ class GAEBenchmark:
         """
         scores = self.decision_function(X)
         thresh = np.percentile(scores, 100 - 100 * self.outliers_fraction)
-        return np.where(scores > thresh, 1, 0)
+        return np.where(scores > thresh, -1, 1)
 
 
 class GraphAutoencoder(nn.Module):

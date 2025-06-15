@@ -3,6 +3,7 @@ import os
 import seaborn as sns
 from sklearn.decomposition import PCA
 from gnn import GAEBenchmark
+from sklearn.ensemble import IsolationForest
 
 BENCHMARK_LIST = ["rcov", "svm", "ifor", "dose"]
 
@@ -21,21 +22,37 @@ class WhitenedBenchmark:
     def __init__(self, model_name, base_model, args):
         self.model_name = model_name
         self.base_model = base_model
-        self.pca = PCA(n_components=args.latent_size)
+        # Only use PCA for non-Isolation Forest models
+        if not isinstance(base_model, IsolationForest):
+            self.pca = PCA(n_components=args.latent_size)
+        else:
+            self.pca = None
 
     def fit(self, X):
-        self.pca = self.pca.fit(X)
-        X_whitened = self.pca.transform(X)
-        self.base_model.fit(X_whitened)
+        if self.pca is not None:
+            self.pca = self.pca.fit(X)
+            X_whitened = self.pca.transform(X)
+            self.base_model.fit(X_whitened)
+        else:
+            # For Isolation Forest, use raw features
+            self.base_model.fit(X)
         return self
 
     def decision_function(self, X):
-        X_whitened = self.pca.transform(X)
-        return self.base_model.decision_function(X_whitened)
+        if self.pca is not None:
+            X_whitened = self.pca.transform(X)
+            return self.base_model.decision_function(X_whitened)
+        else:
+            # For Isolation Forest, use raw features
+            return -self.base_model.score_samples(X)  # Negative scores for anomalies
 
     def predict(self, X):
-        X_whitened = self.pca.transform(X)
-        return self.base_model.predict(X_whitened)
+        if self.pca is not None:
+            X_whitened = self.pca.transform(X)
+            return self.base_model.predict(X_whitened)
+        else:
+            # For Isolation Forest, use raw features
+            return self.base_model.predict(X)
 
 
 def get_benchmark(model_name, args):

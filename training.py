@@ -25,23 +25,26 @@ from dose import DoSE_SVM, kl_divergence
 def train_sklearn(epoch, dataset, model):
     train_loss = 0
     # fit the data and tag outliers
-    model.fit(dataset.data)
-    train_scores = model.decision_function(
-        dataset.data
-    )  # positive distances for inlier, negative for outlier
+    if isinstance(model, IsolationForest):
+        # Convert to numpy for sklearn
+        X = dataset.data.numpy()
+        model.fit(X)
+        train_scores = -model.score_samples(X)  # Negative scores for anomalies
+    else:
+        model.fit(dataset.data)
+        train_scores = model.decision_function(dataset.data)
     train_loss = -1 * np.average(train_scores)  # reverse signage
     return train_loss, model
 
 
 def validate_sklearn(epoch, dataset, model):
     # fit the data and tag outliers
-    val_scores = model.decision_function(
-        dataset.data
-    )  # positive distances for inlier, negative for outlier
+    if isinstance(model, IsolationForest):
+        X = dataset.data.numpy()
+        val_scores = -model.score_samples(X)  # Negative scores for anomalies
+    else:
+        val_scores = model.decision_function(dataset.data)
     val_loss = -1 * np.average(val_scores)  # reverse signage
-    # For IsolationForest, negate scores so higher values indicate anomalies
-    if type(model) == IsolationForest:
-        val_scores = -val_scores
     val_auroc = roc_auc_score(dataset.labels, val_scores)
     return val_loss, val_auroc
 
@@ -55,20 +58,21 @@ def test_sklearn(seed, args, train_dataset, test_dataset):
     model = pickle.load(open(filename, "rb"))
 
     # Get predictions and scores
-    scores = model.decision_function(test_dataset.data)
-    predictions = model.predict(test_dataset.data)
+    if isinstance(model, IsolationForest):
+        X = test_dataset.data.numpy()
+        scores = -model.score_samples(X)  # Negative scores for anomalies
+        predictions = model.predict(X)
+    else:
+        scores = model.decision_function(test_dataset.data)
+        predictions = model.predict(test_dataset.data)
 
     # Convert predictions to binary (0 for normal, 1 for anomaly)
-    if type(model) == IsolationForest or type(model) == SGDOneClassSVM:
+    if isinstance(model, IsolationForest) or isinstance(model, SGDOneClassSVM):
         predictions = [
             0 if y == 1 else 1 for y in predictions
         ]  # iForest sets 1 as inlier and -1 as outlier
     else:
         predictions = [0 if y == -1 else y for y in predictions]
-
-    # For IsolationForest, negate scores so higher values indicate anomalies
-    if type(model) == IsolationForest:
-        scores = -scores
 
     # Calculate metrics
     accuracy = accuracy_score(test_dataset.labels, predictions)
@@ -184,24 +188,17 @@ def get_marginal_posterior(data_loader, model, device):
     return MixtureSameFamily(mix, comp)
 
 
-def train_gnn(epoch, train_dataset, model):
+def train_gnn(epoch, dataset, model):
     """Train GNN model for one epoch."""
-    train_loss, model = model.fit(train_dataset.data)
+    train_loss, model = model.fit(dataset.data)
     return train_loss, model
 
 
-def validate_gnn(epoch, val_dataset, model):
+def validate_gnn(epoch, dataset, model):
     """Validate GNN model."""
-    model.model.eval()
-
-    with torch.no_grad():
-        # Get scores for the whole dataset
-        scores = model.decision_function(val_dataset.data)
-        val_loss = np.average(scores)  # GNN already gives higher scores for anomalies
-
-        # Calculate AUROC
-        val_auroc = roc_auc_score(val_dataset.labels, scores)
-
+    val_scores = model.decision_function(dataset.data)
+    val_loss = np.average(val_scores)  # reverse signage to match other models
+    val_auroc = roc_auc_score(dataset.labels, val_scores)
     return val_loss, val_auroc
 
 
@@ -213,49 +210,16 @@ def test_gnn(seed, args, train_dataset, test_dataset):
     filename = os.path.join("results", f"{args.dataset}_{args.benchmark}_{seed}.pth")
     model = pickle.load(open(filename, "rb"))
 
-    # Create test dataloader
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=True,
-    )
-
     # Get predictions and scores
-    model.model.eval()
-    all_scores = []
-    all_labels = []
-    all_predictions = []
-
-    with torch.no_grad():
-        for batch in test_loader:
-            batch_X = batch[0]
-            batch_y = batch[1]
-
-            # Get scores and predictions
-            scores = model.decision_function(batch_X)
-            predictions = model.predict(batch_X)
-            predictions = [0 if y == 1 else -1 for y in predictions]
-
-            all_scores.extend(scores)
-            all_labels.extend(batch_y.numpy())
-            all_predictions.extend(predictions)
+    scores = model.decision_function(test_dataset.data)
+    predictions = model.predict(test_dataset.data)
 
     # Calculate metrics
-    accuracy = accuracy_score(all_labels, all_predictions)
-    precision = precision_score(all_labels, all_predictions)
-    recall = recall_score(all_labels, all_predictions)
-    f1 = f1_score(all_labels, all_predictions)
-    auroc = roc_auc_score(all_labels, all_scores)
-
-    # Print results for this seed
-    print(f"\nResults for seed {seed}:")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"AUROC: {auroc:.4f}")
+    accuracy = accuracy_score(test_dataset.labels, predictions)
+    precision = precision_score(test_dataset.labels, predictions)
+    recall = recall_score(test_dataset.labels, predictions)
+    f1 = f1_score(test_dataset.labels, predictions)
+    auroc = roc_auc_score(test_dataset.labels, scores)
 
     # Save results for this seed
     results = {
