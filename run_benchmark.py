@@ -204,7 +204,7 @@ def train(args):
             )
 
         # Save best model
-        if len(val_loss_log) == 0 or val_loss < min(val_loss_log):
+        if len(val_loss_log) == 0 or val_loss <= min(val_loss_log):
             filename = os.path.join(
                 "results", f"{args.dataset}_{args.benchmark}_{args.seed}.pth"
             )

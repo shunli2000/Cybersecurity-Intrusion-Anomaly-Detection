@@ -4,6 +4,7 @@ stats/*
 results/*
 __pycache__/*
 
+.venv/
 venv/
 note.md
 wandb/
