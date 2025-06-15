@@ -155,7 +155,8 @@ def train(args):
                 "hidden_size": args.hidden_size,
                 "num_layers": args.num_layers,
             },
-            name=f"{args.benchmark}_{args.dataset}_{args.seed}",
+            name=args.wandb_name,
+            tags=args.wandb_tags,
         )
 
     # Training loop
@@ -166,7 +167,7 @@ def train(args):
                 epoch, train_loader, model, prior, optimiser, args.device
             )
         elif model_name == "gnn":
-            train_loss, model = train_gnn(epoch, train_dataset, model, set_size=1000)
+            train_loss, model = train_gnn(epoch, train_dataset, model)
         else:
             train_loss, model = train_sklearn(epoch, train_dataset, model)
 

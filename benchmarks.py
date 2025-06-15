@@ -44,6 +44,9 @@ def get_benchmark(model_name, args):
             input_dim=args.input_dim,
             hidden_dim=args.hidden_size,
             num_layers=args.num_layers,
+            lr=args.learning_rate,
+            epochs=args.gnn_epochs,
+            outliers_fraction=args.outliers_fraction,
         )
     else:
         raise ValueError(f"Unknown model name: {model_name}")

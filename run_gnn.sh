@@ -3,9 +3,9 @@
 # Run IsolationForest for seeds 1-5
 echo "Running training phase ..."
 python run_benchmark.py --train \
-    --benchmark gnn --batch-size 128 --num-workers 16 \
-    --subsample 100 \
-    --use-wandb --wandb-name "gnn_subsample_100_train" --wandb-tags "gnn, train"
+    --subsample 10 \
+    --benchmark gnn \
+    --use-wandb --wandb-name "gnn_subsample_10_train" --wandb-tags "gnn, train"
 echo "Completed training"
 echo "----------------------------------------"
 

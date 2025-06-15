@@ -71,7 +71,6 @@ class BETHDataset(TensorDataset):
         # Subsample data
         if subsample > 0:
             self.data, self.labels = self.data[::subsample], self.labels[::subsample]
-
         super().__init__(self.data, self.labels)
 
     def get_input_shape(

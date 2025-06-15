@@ -184,17 +184,24 @@ def get_marginal_posterior(data_loader, model, device):
     return MixtureSameFamily(mix, comp)
 
 
-def train_gnn(epoch, dataset, model, set_size=1000):
+def train_gnn(epoch, train_dataset, model):
     """Train GNN model for one epoch."""
-    train_loss, model = model.fit(dataset.data, set_size=set_size)
+    train_loss, model = model.fit(train_dataset.data)
     return train_loss, model
 
 
-def validate_gnn(epoch, dataset, model):
+def validate_gnn(epoch, val_dataset, model):
     """Validate GNN model."""
-    val_scores = model.decision_function(dataset.data)
-    val_loss = -1 * np.average(val_scores)  # reverse signage to match other models
-    val_auroc = roc_auc_score(dataset.labels, val_scores)
+    model.model.eval()
+
+    with torch.no_grad():
+        # Get scores for the whole dataset
+        scores = model.decision_function(val_dataset.data)
+        val_loss = -1 * np.average(scores)  # reverse signage to match other models
+
+        # Calculate AUROC
+        val_auroc = roc_auc_score(val_dataset.labels, scores)
+
     return val_loss, val_auroc
 
 
@@ -206,21 +213,41 @@ def test_gnn(seed, args, train_dataset, test_dataset):
     filename = os.path.join("results", f"{args.dataset}_{args.benchmark}_{seed}.pth")
     model = pickle.load(open(filename, "rb"))
 
-    # Get predictions and scores
-    scores = model.decision_function(test_dataset.data)
-    predictions = model.predict(test_dataset.data)
+    # Create test dataloader
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
 
-    # Convert predictions to binary (0 for normal, 1 for anomaly)
-    predictions = [
-        1 if y == -1 else 0 for y in predictions
-    ]  # -1 is anomaly, 1 is normal
+    # Get predictions and scores
+    model.model.eval()
+    all_scores = []
+    all_labels = []
+    all_predictions = []
+
+    with torch.no_grad():
+        for batch in test_loader:
+            batch_X = batch[0]
+            batch_y = batch[1]
+
+            # Get scores and predictions
+            scores = model.decision_function(batch_X)
+            predictions = model.predict(batch_X)
+            predictions = [0 if y == 1 else -1 for y in predictions]
+
+            all_scores.extend(scores)
+            all_labels.extend(batch_y.numpy())
+            all_predictions.extend(predictions)
 
     # Calculate metrics
-    accuracy = accuracy_score(test_dataset.labels, predictions)
-    precision = precision_score(test_dataset.labels, predictions)
-    recall = recall_score(test_dataset.labels, predictions)
-    f1 = f1_score(test_dataset.labels, predictions)
-    auroc = roc_auc_score(test_dataset.labels, scores)
+    accuracy = accuracy_score(all_labels, all_predictions)
+    precision = precision_score(all_labels, all_predictions)
+    recall = recall_score(all_labels, all_predictions)
+    f1 = f1_score(all_labels, all_predictions)
+    auroc = roc_auc_score(all_labels, all_scores)
 
     # Print results for this seed
     print(f"\nResults for seed {seed}:")
