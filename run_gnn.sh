@@ -4,7 +4,8 @@
 echo "Running training phase ..."
 python run_benchmark.py --train \
     --subsample 10 \
-    --benchmark gnn \
+    --benchmark gnn --epochs 20 \
+    --learning-rate 0.001 --gnn-epochs 100 --hidden-size 64 --num-layers 3 \
     --use-wandb --wandb-name "gnn_subsample_10_train" --wandb-tags "gnn, train"
 echo "Completed training"
 echo "----------------------------------------"

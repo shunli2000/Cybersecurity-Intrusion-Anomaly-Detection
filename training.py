@@ -197,7 +197,7 @@ def validate_gnn(epoch, val_dataset, model):
     with torch.no_grad():
         # Get scores for the whole dataset
         scores = model.decision_function(val_dataset.data)
-        val_loss = -1 * np.average(scores)  # reverse signage to match other models
+        val_loss = np.average(scores)  # GNN already gives higher scores for anomalies
 
         # Calculate AUROC
         val_auroc = roc_auc_score(val_dataset.labels, scores)
