@@ -8,6 +8,7 @@ import torch
 from pathlib import Path
 import os
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+import xgboost
 
 # 定義訓練時使用的欄位
 FEATURES = [
@@ -23,30 +24,39 @@ def process_input_data(filepath):
     try:
         # Read the CSV file
         df = pd.read_csv(filepath)
+
+        # Extract timestamp and original userId for returning BEFORE any transformation
+        original_info_df = df[['timestamp', 'userId']].copy()
+
+        # Apply feature engineering logic based on provided rules
+        df["processId"] = df["processId"].map(lambda x: 0 if x in [0, 1, 2] else 1)
+        df["parentProcessId"] = df["parentProcessId"].map(lambda x: 0 if x in [0, 1, 2] else 1)
+        df["userId"] = df["userId"].map(lambda x: 0 if x < 1000 else 1)
+        df["mountNamespace"] = df["mountNamespace"].map(lambda x: 0 if x == 4026531840 else 1)
+        df["returnValue"] = df["returnValue"].map(lambda x: 0 if x == 0 else (1 if x > 0 else 2))
+
+        # Define the specific features for the model
+        features_for_model = [
+            "processId", "parentProcessId", "userId",
+            "mountNamespace", "eventId", "argsNum", "returnValue"
+        ]
         
-        # Select features for the model
-        df_model_features = df[FEATURES].copy() # Use a copy for modifications
+        # Select the final features for the model
+        df_model_features = df[features_for_model].copy()
 
-        # Extract timestamp and userId for returning BEFORE any transformation that alters them
-        # This assumes 'timestamp' and 'userId' are in df_model_features
-        original_info_df = df_model_features[['timestamp', 'userId']].copy()
-
-        # Basic data cleaning on df_model_features
+        # Basic data cleaning on the final feature set
         df_model_features.fillna(0, inplace=True)
-        
-        # Handle categorical columns in df_model_features
-        categorical_columns = df_model_features.select_dtypes(include=['object']).columns
-        for col in categorical_columns:
-            le = LabelEncoder()
-            df_model_features[col] = le.fit_transform(df_model_features[col].astype(str))
-        
+        '''
+        # Convert to numpy array
         X = df_model_features.values
         
+        # Scale the data
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
+        '''
         
         # Ensure original_info_df has the same row order and count as X_scaled
-        return X_scaled, original_info_df
+        return df_model_features, original_info_df
         
     except Exception as e:
         print(f"Error processing input data: {str(e)}")
@@ -63,7 +73,7 @@ def load_model(model_type):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
             
-        with open('models/ifor_model.pkl', 'rb') as f:
+        with open(model_path, 'rb') as f:
             model = pickle.load(f)
             print(f"Model loaded successfully: {type(model)}")
             return model
@@ -78,12 +88,11 @@ def predict_with_model(data, model_type):
     """
     try:
         # Load the model
-        #model = load_model(model_type)
+        model = load_model(model_type)
         
         # Make predictions
         print(f"Making predictions with model type: {model_type}")
-        #predictions = model.predict(data)
-        predictions = np.random.randint(0, 2, size=(data.shape[0],))  # Simulated predictions for testing
+        predictions = model.predict(data)
         print(f"Predictions shape: {predictions.shape}")
         
         return predictions
