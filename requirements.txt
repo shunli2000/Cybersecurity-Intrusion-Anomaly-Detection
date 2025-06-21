@@ -1,4 +1,4 @@
-numpy==1.24.3
+numpy==2.2.6
 pandas
 xgboost==1.7.6
 flask==2.3.2
