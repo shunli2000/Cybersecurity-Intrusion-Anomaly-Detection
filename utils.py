@@ -4,10 +4,9 @@ import sys
 import pandas as pd
 import numpy as np
 import pickle
-import torch
+
 from pathlib import Path
 import os
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 import xgboost
 
 # 定義訓練時使用的欄位
